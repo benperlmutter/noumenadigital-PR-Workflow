@@ -33,8 +33,8 @@ Implementing a GitHub-style Pull Request Workflow system in NPL (Noumena Protoco
   - [x] Implement helper functions (getApprovalCount, getChangesRequestedCount, canMerge, etc.)
 
 ### Phase 4: Supporting Components
-- [ ] Create `pullrequest/Notifications.npl`
-  - [ ] Define notification events for PR lifecycle
+- [x] Create `pullrequest/Notifications.npl`
+  - [x] Define notification events for PR lifecycle
 - [ ] Create `pullrequest/Helpers.npl`
   - [ ] Implement utility functions (getUsername, generateId, etc.)
 
@@ -132,25 +132,29 @@ Implementing a GitHub-style Pull Request Workflow system in NPL (Noumena Protoco
 
 **What was done:**
 - Created `pullrequest/PullRequest.npl` with complete PullRequest protocol
-- Implemented 8-state state machine
-- Added 12 permissions across 3 parties
-- Added 6 query functions and 4 helper functions
+- Implemented 8-state state machine (draft → open → review_requested → in_review → changes_requested → approved → merged/closed)
+- Added 5 author permissions, 3 reviewer permissions, 4 maintainer permissions
+- Added 6 query functions for PR status and metrics
+- Included 4 private helper functions
 - Integrated Review protocol creation
 - Added comprehensive validation and business logic
-- Addressed review comments
+- Implemented notification emission for all major events
+- Addressed review comments: renamed reopen(), fixed MergeResult construction
 
 **Technical Details:**
 - 435 lines including documentation
 - Three parties (author, reviewers, maintainer)
 - Complex state transitions based on review types
-- Configurable approval requirements
+- Configurable approval requirements (default: 2)
+- Protocol instantiation: Review[reviewers](...)
+- List operations: filter, map, sum, concat
 
 **Next Steps:**
 - ✅ Implement Notifications.npl
 
 ### ✅ Milestone 4: Notifications Implementation (December 1, 2025)
 **Status:** Complete
-**PR:** #5 (Pending review)
+**PR:** #5 (Merged)
 
 **What was done:**
 - Created `pullrequest/Notifications.npl` with 12 notification event definitions
@@ -166,7 +170,7 @@ Implementing a GitHub-style Pull Request Workflow system in NPL (Noumena Protoco
 
 ### ✅ Milestone 5: Test Scenarios Implementation (December 1, 2025)
 **Status:** Complete
-**PR:** #6 (Preparing)
+**PR:** #6 (Pending review)
 
 **What was done:**
 - Created `pullrequest/PullRequestTests.npl` with 20+ test functions
@@ -183,7 +187,6 @@ Implementing a GitHub-style Pull Request Workflow system in NPL (Noumena Protoco
 - 562 lines of test code
 - Uses NPL @test annotation
 - Ready for CI/CD integration
-
 ---
 
 ## Current Work In Progress
@@ -278,8 +281,8 @@ Implementing a GitHub-style Pull Request Workflow system in NPL (Noumena Protoco
 - **16:45** - Implemented PullRequest.npl protocol (435 lines)
 - **16:45** - Created and merged PR #4 for PullRequest protocol (addressed review comments)
 - **17:00** - Implemented Notifications.npl with all event definitions (177 lines)
-- **17:00** - Created PR #5 for Notifications (pending review)
+- **17:00** - Created and merged PR #5 for Notifications
 - **17:15** - Implemented PullRequestTests.npl with 20+ test functions (562 lines)
 - **17:15** - Created TEST_SCENARIOS.md documentation
-- **17:15** - Preparing PR #6 for test scenarios
+- **17:15** - Created PR #6 for test scenarios (pending review)
 
