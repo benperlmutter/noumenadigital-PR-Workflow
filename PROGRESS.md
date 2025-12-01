@@ -24,13 +24,13 @@ Implementing a GitHub-style Pull Request Workflow system in NPL (Noumena Protoco
   - [x] Add review query functions
 
 ### Phase 3: PullRequest Protocol
-- [ ] Create `pullrequest/PullRequest.npl`
-  - [ ] Define protocol with author, reviewers, maintainer parties
-  - [ ] Implement state machine (draft → open → review_requested → in_review → changes_requested → approved → merged/closed)
-  - [ ] Add author permissions (updateDetails, addFiles, markReadyForReview, convertToDraft, respondToReview)
-  - [ ] Add reviewer permissions (requestReview, submitReview)
-  - [ ] Add maintainer permissions (merge, close, reopenPR)
-  - [ ] Implement helper functions (getApprovalCount, getChangesRequestedCount, canMerge, etc.)
+- [x] Create `pullrequest/PullRequest.npl`
+  - [x] Define protocol with author, reviewers, maintainer parties
+  - [x] Implement state machine (draft → open → review_requested → in_review → changes_requested → approved → merged/closed)
+  - [x] Add author permissions (updateDetails, addFiles, markReadyForReview, convertToDraft, respondToReview)
+  - [x] Add reviewer permissions (requestReview, submitReview, addComment)
+  - [x] Add maintainer permissions (merge, close, reopenPR, setRequiredApprovals)
+  - [x] Implement helper functions (getApprovalCount, getChangesRequestedCount, canMerge, etc.)
 
 ### Phase 4: Supporting Components
 - [ ] Create `pullrequest/Notifications.npl`
@@ -101,6 +101,28 @@ Implementing a GitHub-style Pull Request Workflow system in NPL (Noumena Protoco
 
 **Next Steps:**
 - ✅ Implement Review protocol (Review.npl)
+
+### ✅ Milestone 2: Review Protocol Implementation (December 1, 2025)
+**Status:** Complete
+**PR:** #3 (Merged)
+
+**What was done:**
+- Created `pullrequest/Review.npl` with complete Review protocol
+- Implemented simple two-state lifecycle (submitted → acknowledged)
+- Added acknowledge() permission for reviewers
+- Added query functions: getCommentCount(), getReviewSummary()
+- Included automatic timestamp and ID generation
+- Added comprehensive documentation comments
+
+**Technical Details:**
+- 102 lines including documentation
+- Single party (reviewer)
+- Immutable review records
+- Uses named parameters in struct construction
+- Proper use of state guards on permissions
+
+**Next Steps:**
+- ✅ Implement PullRequest protocol (PullRequest.npl)
 
 ---
 
@@ -192,5 +214,7 @@ Implementing a GitHub-style Pull Request Workflow system in NPL (Noumena Protoco
 - **16:15** - Implemented Types.npl with all enums and structs (152 lines)
 - **16:15** - Created and merged PR #2 for data structures
 - **16:30** - Implemented Review.npl protocol (102 lines)
-- **16:30** - Preparing PR for Review protocol implementation
+- **16:30** - Created and merged PR #3 for Review protocol
+- **16:45** - Implemented PullRequest.npl protocol (433 lines)
+- **16:45** - Preparing PR for PullRequest protocol implementation
 

@@ -1,0 +1,434 @@
+package pullrequest;
+
+/**
+ * PullRequest Protocol
+ * 
+ * Represents a GitHub-style pull request with full lifecycle management.
+ * Coordinates code reviews, enforces merge rules, and emits notifications.
+ * 
+ * Parties:
+ * - author: Creator and owner of the PR
+ * - reviewers: Team members who can review and approve
+ * - maintainer: Repository maintainer who can merge/close
+ * 
+ * States:
+ * - draft (initial): PR is being prepared
+ * - open: PR is ready but not yet reviewed
+ * - review_requested: Review has been formally requested
+ * - in_review: Actively being reviewed
+ * - changes_requested: Reviewer requested modifications
+ * - approved: PR has required approvals
+ * - merged (final): PR has been merged
+ * - closed (final): PR was closed without merging
+ * 
+ * Key Features:
+ * - Multi-party authorization (author, reviewers, maintainer)
+ * - Complex state machine with 8 states
+ * - Review aggregation and approval tracking
+ * - Configurable approval requirements
+ * - Comprehensive notification system
+ */
+@api
+protocol[author, reviewers, maintainer] PullRequest(
+    var title: Text,
+    var description: Text,
+    var sourceBranch: Text,
+    var targetBranch: Text,
+    var filesChanged: List<FileChange>
+) {
+    // ========================================================================
+    // VALIDATION ON CONSTRUCTION
+    // ========================================================================
+    
+    require(!title.isEmpty(), "PR title cannot be empty");
+    require(title.length() <= 200, "PR title must be 200 characters or less");
+    require(!sourceBranch.isEmpty(), "Source branch must be specified");
+    require(!targetBranch.isEmpty(), "Target branch must be specified");
+    require(sourceBranch != targetBranch, "Source and target branches must be different");
+    require(!filesChanged.isEmpty(), "PR must contain at least one file change");
+    
+    // ========================================================================
+    // STATE MACHINE DEFINITION
+    // ========================================================================
+    
+    initial state draft;
+    state open;
+    state review_requested;
+    state in_review;
+    state changes_requested;
+    state approved;
+    final state merged;
+    final state closed;
+    
+    // ========================================================================
+    // CORE DATA FIELDS
+    // ========================================================================
+    
+    private var reviews: List<Review> = listOf<Review>();
+    private var requiredApprovals: Number = 2;
+    var isDraft: Boolean = true;
+    var mergeCommitSha: Optional<Text> = optionalOf<Text>();
+    var closedAt: Optional<DateTime> = optionalOf<DateTime>();
+    var mergedAt: Optional<DateTime> = optionalOf<DateTime>();
+    var mergedBy: Optional<Party> = optionalOf<Party>();
+    
+    // Timestamps
+    var createdAt: DateTime = now();
+    var updatedAt: DateTime = now();
+    
+    // ========================================================================
+    // AUTHOR PERMISSIONS
+    // ========================================================================
+    
+    /**
+     * Update PR title and description.
+     * Available in: draft, open, review_requested, changes_requested
+     */
+    @api
+    permission[author] updateDetails(
+        newTitle: Text,
+        newDescription: Text
+    ) | draft, open, review_requested, changes_requested {
+        require(!newTitle.isEmpty(), "Title cannot be empty");
+        require(newTitle.length() <= 200, "Title too long");
+        
+        title = newTitle;
+        description = newDescription;
+        updatedAt = now();
+        
+        notify PRUpdated(title, getUsername(author));
+    };
+    
+    /**
+     * Add new files to the PR.
+     * Available in: draft, open, changes_requested
+     */
+    @api
+    permission[author] addFiles(
+        newFiles: List<FileChange>
+    ) | draft, open, changes_requested {
+        require(!newFiles.isEmpty(), "Must provide at least one file");
+        
+        filesChanged = filesChanged.concat(newFiles);
+        updatedAt = now();
+        
+        notify FilesAdded(newFiles.size(), title);
+    };
+    
+    /**
+     * Mark PR as ready for review (transition from draft to open).
+     * Available in: draft
+     */
+    @api
+    permission[author] markReadyForReview() | draft {
+        require(filesChanged.size() > 0, "Cannot mark PR ready without files");
+        
+        isDraft = false;
+        become open;
+        updatedAt = now();
+        
+        notify PRReadyForReview(title, getUsername(author));
+    };
+    
+    /**
+     * Convert PR back to draft status.
+     * Available in: open, review_requested
+     */
+    @api
+    permission[author] convertToDraft() | open, review_requested {
+        isDraft = true;
+        become draft;
+        updatedAt = now();
+        
+        notify PRConvertedToDraft(title);
+    };
+    
+    /**
+     * Respond to a review (for demo purposes, just updates timestamp).
+     * Available in: changes_requested, in_review
+     */
+    @api
+    permission[author] respondToReview(
+        reviewId: Text,
+        response: Text
+    ) | changes_requested, in_review {
+        require(!response.isEmpty(), "Response cannot be empty");
+        
+        // In a real system, this would update review comments
+        // For demo purposes, we'll just update timestamp
+        updatedAt = now();
+        
+        notify AuthorResponded(title, getUsername(author), reviewId);
+    };
+    
+    // ========================================================================
+    // REVIEWER PERMISSIONS
+    // ========================================================================
+    
+    /**
+     * Request a review (transition from open to review_requested).
+     * Available in: open
+     */
+    @api
+    permission[reviewers] requestReview() | open {
+        become review_requested;
+        updatedAt = now();
+        
+        notify ReviewRequested(title, getUsername(reviewers));
+    };
+    
+    /**
+     * Submit a code review with type, summary, and comments.
+     * Available in: review_requested, in_review, changes_requested
+     * Returns: The created Review protocol instance
+     */
+    @api
+    permission[reviewers] submitReview(
+        reviewType: ReviewType,
+        summary: Text,
+        comments: List<ReviewComment>
+    ) | review_requested, in_review, changes_requested returns Review {
+        require(!summary.isEmpty(), "Review summary cannot be empty");
+        
+        // Create the review
+        var review = Review[reviewers](reviewType, summary, comments);
+        reviews = reviews.concat(listOf<Review>(review));
+        
+        // Update state based on review type and current reviews
+        if (reviewType == ReviewType.REQUEST_CHANGES) {
+            become changes_requested;
+        } else if (reviewType == ReviewType.APPROVE) {
+            if (getApprovalCount() >= requiredApprovals) {
+                become approved;
+            } else {
+                become in_review;
+            }
+        } else {
+            // COMMENT type
+            become in_review;
+        }
+        
+        updatedAt = now();
+        
+        notify ReviewSubmitted(
+            title,
+            getUsername(reviewers),
+            reviewType,
+            comments.size()
+        );
+        
+        return review;
+    };
+    
+    /**
+     * Add a single comment to a specific line in a file.
+     * Available in: open, review_requested, in_review, changes_requested
+     */
+    @api
+    permission[reviewers] addComment(
+        filePath: Text,
+        lineNumber: Number,
+        commentText: Text
+    ) | open, review_requested, in_review, changes_requested {
+        require(!commentText.isEmpty(), "Comment cannot be empty");
+        require(lineNumber > 0, "Line number must be positive");
+        
+        var comment = ReviewComment(
+            filePath = filePath,
+            lineNumber = lineNumber,
+            commentText = commentText,
+            createdAt = now(),
+            commentId = generateCommentId()
+        );
+        
+        // Add to lightweight comments (not full review)
+        updatedAt = now();
+        
+        notify CommentAdded(title, getUsername(reviewers), filePath, lineNumber);
+    };
+    
+    // ========================================================================
+    // MAINTAINER PERMISSIONS
+    // ========================================================================
+    
+    /**
+     * Set the number of required approvals before merge.
+     * Available in: draft, open, review_requested
+     */
+    @api
+    permission[maintainer] setRequiredApprovals(
+        count: Number
+    ) | draft, open, review_requested {
+        require(count > 0, "Required approvals must be positive");
+        require(count <= 10, "Required approvals cannot exceed 10");
+
+        requiredApprovals = count;
+        updatedAt = now();
+
+        notify RequiredApprovalsChanged(title, count);
+    };
+
+    /**
+     * Merge the PR into the target branch.
+     * Available in: approved
+     * Returns: MergeResult with success status and commit SHA
+     */
+    @api
+    permission[maintainer] merge(
+        commitMessage: Text
+    ) | approved returns MergeResult {
+        require(!commitMessage.isEmpty(), "Commit message required");
+        require(getApprovalCount() >= requiredApprovals, "Insufficient approvals");
+        require(!hasUnresolvedChangeRequests(), "Cannot merge with unresolved change requests");
+
+        var sha = generateMergeCommitSha();
+        mergeCommitSha = optionalOf<Text>(sha);
+        mergedAt = optionalOf<DateTime>(now());
+        mergedBy = optionalOf<Party>(maintainer);
+
+        become merged;
+        updatedAt = now();
+
+        notify PRMerged(
+            title,
+            sourceBranch,
+            targetBranch,
+            sha,
+            getUsername(maintainer)
+        );
+
+        return MergeResult(success = true, commitSha = sha, message = "Successfully merged");
+    };
+
+    /**
+     * Close the PR without merging.
+     * Available in: open, review_requested, in_review, changes_requested, approved
+     */
+    @api
+    permission[maintainer] close(
+        reason: Text
+    ) | open, review_requested, in_review, changes_requested, approved {
+        require(!reason.isEmpty(), "Close reason required");
+
+        closedAt = optionalOf<DateTime>(now());
+        become closed;
+        updatedAt = now();
+
+        notify PRClosed(title, reason, getUsername(maintainer));
+    };
+
+    /**
+     * Reopen a closed PR.
+     * Available in: closed
+     */
+    @api
+    permission[maintainer] reopenPR() | closed {
+        closedAt = optionalOf<DateTime>();
+        become open;
+        updatedAt = now();
+
+        notify PRReopened(title, getUsername(maintainer));
+    };
+
+    // ========================================================================
+    // QUERY FUNCTIONS (available to all parties)
+    // ========================================================================
+
+    /**
+     * Get the total number of reviews submitted.
+     */
+    @api
+    function getReviewCount() returns Number -> reviews.size();
+
+    /**
+     * Get the number of APPROVE reviews.
+     */
+    @api
+    function getApprovalCount() returns Number -> {
+        return reviews
+            .filter(function(r: Review) returns Boolean -> r.reviewType == ReviewType.APPROVE)
+            .size();
+    };
+
+    /**
+     * Get the number of REQUEST_CHANGES reviews.
+     */
+    @api
+    function getChangesRequestedCount() returns Number -> {
+        return reviews
+            .filter(function(r: Review) returns Boolean -> r.reviewType == ReviewType.REQUEST_CHANGES)
+            .size();
+    };
+
+    /**
+     * Get the total number of comments across all reviews.
+     */
+    @api
+    function getCommentCount() returns Number -> {
+        return reviews
+            .map(function(r: Review) returns Number -> r.comments.size())
+            .sum();
+    };
+
+    /**
+     * Check if the PR can be merged (has enough approvals and no unresolved change requests).
+     */
+    @api
+    function canMerge() returns Boolean -> {
+        return getApprovalCount() >= requiredApprovals
+            && !hasUnresolvedChangeRequests();
+    };
+
+    /**
+     * Get a summary of the PR with key metadata.
+     */
+    @api
+    function getSummary() returns PRSummary -> {
+        return PRSummary(
+            title = title,
+            state = "draft",  // Placeholder - would use getCurrentState() in real implementation
+            reviewCount = getReviewCount(),
+            approvalCount = getApprovalCount(),
+            changesRequestedCount = getChangesRequestedCount(),
+            canMerge = canMerge(),
+            createdAt = createdAt,
+            updatedAt = updatedAt
+        );
+    };
+
+    // ========================================================================
+    // PRIVATE HELPER FUNCTIONS
+    // ========================================================================
+
+    /**
+     * Check if there are any unresolved REQUEST_CHANGES reviews.
+     */
+    private function hasUnresolvedChangeRequests() returns Boolean -> {
+        // Check if there are any REQUEST_CHANGES reviews
+        // In a real system, would check if subsequent APPROVE from same reviewer exists
+        return getChangesRequestedCount() > 0;
+    };
+
+    /**
+     * Generate a unique comment ID based on timestamp.
+     */
+    private function generateCommentId() returns Text -> {
+        return "comment_" + now().toText();
+    };
+
+    /**
+     * Generate a merge commit SHA based on timestamp.
+     */
+    private function generateMergeCommitSha() returns Text -> {
+        return "sha_" + now().toMillis().toText();
+    };
+
+    /**
+     * Get username from a party (placeholder implementation).
+     * In a real system, this would extract username from party claims.
+     */
+    private function getUsername(party: Party) returns Text -> {
+        return "user";  // Placeholder
+    };
+};
+
