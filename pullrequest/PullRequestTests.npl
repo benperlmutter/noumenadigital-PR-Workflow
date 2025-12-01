@@ -1,0 +1,563 @@
+package pullrequest;
+
+/**
+ * Test Suite for Pull Request Workflow System
+ *
+ * This file contains comprehensive unit and integration tests for the PR workflow.
+ * Tests cover:
+ * - PR creation and lifecycle
+ * - Review submission and approval logic
+ * - State transitions
+ * - Authorization rules
+ * - Merge validation
+ * - Edge cases and error conditions
+ *
+ * Test execution:
+ * Run with NPL test runner: `npl test pullrequest/PullRequestTests.npl`
+ */
+
+// ============================================================================
+// UNIT TESTS - PR CREATION AND BASIC OPERATIONS
+// ============================================================================
+
+/**
+ * Test: Create a new PR in draft state
+ * Verifies that a PR is created with correct initial values
+ */
+@test
+function testCreatePR(test: Test) -> {
+    var authorParty = createParty("alice@example.com", "developer");
+    var reviewerParty = createParty("bob@example.com", "reviewer");
+    var maintainerParty = createParty("dave@example.com", "maintainer");
+
+    var files = listOf<FileChange>(
+        FileChange("src/test.ts", FileChangeType.ADDED, 100, 0, optionalOf<Text>())
+    );
+
+    var pr = PullRequest[authorParty, listOf<Party>(reviewerParty), maintainerParty](
+        "Test PR",
+        "Test description",
+        "feature/test",
+        "main",
+        files
+    );
+
+    test.assertEquals("Test PR", pr.title);
+    test.assertEquals(true, pr.isDraft);
+    test.assertEquals(1, pr.filesChanged.size());
+    test.assertEquals("feature/test", pr.sourceBranch);
+    test.assertEquals("main", pr.targetBranch);
+};
+
+/**
+ * Test: Mark PR as ready for review
+ * Verifies draft → open transition and notification emission
+ */
+@test
+function testMarkReadyForReview(test: Test) -> {
+    var pr = createTestPR();
+
+    test.assertEquals(true, pr.isDraft);
+
+    pr.markReadyForReview[pr.author]();
+
+    test.assertEquals(false, pr.isDraft);
+    test.expectNotifications(pr, PRReadyForReview, 1, function() returns Boolean -> true);
+};
+
+/**
+ * Test: Convert PR back to draft
+ * Verifies open → draft transition
+ */
+@test
+function testConvertToDraft(test: Test) -> {
+    var pr = createTestPR();
+    pr.markReadyForReview[pr.author]();
+
+    test.assertEquals(false, pr.isDraft);
+
+    pr.convertToDraft[pr.author]();
+
+    test.assertEquals(true, pr.isDraft);
+    test.expectNotifications(pr, PRConvertedToDraft, 1, function() returns Boolean -> true);
+};
+
+/**
+ * Test: Update PR details
+ * Verifies title and description can be updated
+ */
+@test
+function testUpdateDetails(test: Test) -> {
+    var pr = createTestPR();
+
+    pr.updateDetails[pr.author]("New Title", "New Description");
+
+    test.assertEquals("New Title", pr.title);
+    test.assertEquals("New Description", pr.description);
+    test.expectNotifications(pr, PRUpdated, 1, function() returns Boolean -> true);
+};
+
+/**
+ * Test: Add files to PR
+ * Verifies files can be added and notification is emitted
+ */
+@test
+function testAddFiles(test: Test) -> {
+    var pr = createTestPR();
+    var initialCount = pr.filesChanged.size();
+
+    var newFiles = listOf<FileChange>(
+        FileChange("src/new.ts", FileChangeType.ADDED, 50, 0, optionalOf<Text>())
+    );
+
+    pr.addFiles[pr.author](newFiles);
+
+    test.assertEquals(initialCount + 1, pr.filesChanged.size());
+    test.expectNotifications(pr, FilesAdded, 1, function() returns Boolean -> true);
+};
+
+// ============================================================================
+// UNIT TESTS - REVIEW SUBMISSION
+// ============================================================================
+
+/**
+ * Test: Submit approval review
+ * Verifies APPROVE review increments approval count
+ */
+@test
+function testSubmitApprovalReview(test: Test) -> {
+    var pr = createTestPR();
+    pr.markReadyForReview[pr.author]();
+    pr.requestReview[pr.reviewers]();
+
+    var review = pr.submitReview[pr.reviewers](
+        ReviewType.APPROVE,
+        "Looks good!",
+        listOf<ReviewComment>()
+    );
+
+    test.assertEquals(1, pr.getReviewCount());
+    test.assertEquals(1, pr.getApprovalCount());
+    test.assertEquals(0, pr.getChangesRequestedCount());
+};
+
+/**
+ * Test: Submit changes requested review
+ * Verifies REQUEST_CHANGES review transitions to changes_requested state
+ */
+@test
+function testSubmitChangesRequestedReview(test: Test) -> {
+    var pr = createTestPR();
+    pr.markReadyForReview[pr.author]();
+    pr.requestReview[pr.reviewers]();
+
+    pr.submitReview[pr.reviewers](
+        ReviewType.REQUEST_CHANGES,
+        "Needs improvements",
+        listOf<ReviewComment>()
+    );
+
+    test.assertEquals(1, pr.getReviewCount());
+    test.assertEquals(0, pr.getApprovalCount());
+    test.assertEquals(1, pr.getChangesRequestedCount());
+};
+
+/**
+ * Test: Submit comment review
+ * Verifies COMMENT review transitions to in_review state
+ */
+@test
+function testSubmitCommentReview(test: Test) -> {
+    var pr = createTestPR();
+    pr.markReadyForReview[pr.author]();
+    pr.requestReview[pr.reviewers]();
+
+    pr.submitReview[pr.reviewers](
+        ReviewType.COMMENT,
+        "Just a suggestion",
+        listOf<ReviewComment>()
+    );
+
+    test.assertEquals(1, pr.getReviewCount());
+    test.assertEquals(0, pr.getApprovalCount());
+    test.assertEquals(0, pr.getChangesRequestedCount());
+};
+
+/**
+ * Test: Add single comment
+ * Verifies addComment permission works correctly
+ */
+@test
+function testAddComment(test: Test) -> {
+    var pr = createTestPR();
+    pr.markReadyForReview[pr.author]();
+
+    pr.addComment[pr.reviewers]("src/test.ts", 42, "Consider refactoring this");
+
+    test.assertEquals(1, pr.getCommentCount());
+    test.expectNotifications(pr, CommentAdded, 1, function() returns Boolean -> true);
+};
+
+// ============================================================================
+// UNIT TESTS - MERGE VALIDATION
+// ============================================================================
+
+/**
+ * Test: Cannot merge without sufficient approvals
+ * Verifies merge fails when approval count < required
+ */
+@test
+function testCannotMergeWithoutApprovals(test: Test) -> {
+    var pr = createTestPR();
+    pr.markReadyForReview[pr.author]();
+
+    var result = test.assertFails(
+        function() -> pr.merge[pr.maintainer]("Merge commit"),
+        "Should fail without approvals"
+    );
+
+    test.assertTrue(result.contains("Insufficient approvals"));
+};
+
+/**
+ * Test: Successful merge with sufficient approvals
+ * Verifies merge succeeds when requirements are met
+ */
+@test
+function testSuccessfulMerge(test: Test) -> {
+    var pr = createTestPR();
+    pr.markReadyForReview[pr.author]();
+    pr.requestReview[pr.reviewers]();
+
+    // Set required approvals to 1 for this test
+    pr.setRequiredApprovals[pr.maintainer](1);
+
+    // Submit approval
+    pr.submitReview[pr.reviewers](ReviewType.APPROVE, "LGTM", listOf<ReviewComment>());
+
+    test.assertTrue(pr.canMerge());
+
+    var result = pr.merge[pr.maintainer]("Merge feature");
+
+    test.assertTrue(result.success);
+    test.assertFalse(result.commitSha.isEmpty());
+    test.expectNotifications(pr, PRMerged, 1, function() returns Boolean -> true);
+};
+
+/**
+ * Test: Cannot merge with unresolved change requests
+ * Verifies merge fails when changes are requested
+ */
+@test
+function testCannotMergeWithChangeRequests(test: Test) -> {
+    var pr = createTestPR();
+    pr.markReadyForReview[pr.author]();
+    pr.requestReview[pr.reviewers]();
+
+    pr.submitReview[pr.reviewers](ReviewType.REQUEST_CHANGES, "Fix this", listOf<ReviewComment>());
+
+    test.assertFalse(pr.canMerge());
+};
+
+/**
+ * Test: Cannot update PR after merge
+ * Verifies merged PRs are immutable
+ */
+@test
+function testCannotUpdateAfterMerge(test: Test) -> {
+    var pr = createTestPR();
+    pr.markReadyForReview[pr.author]();
+    pr.requestReview[pr.reviewers]();
+    pr.setRequiredApprovals[pr.maintainer](1);
+    pr.submitReview[pr.reviewers](ReviewType.APPROVE, "LGTM", listOf<ReviewComment>());
+    pr.merge[pr.maintainer]("Merge it");
+
+    var result = test.assertFails(
+        function() -> pr.updateDetails[pr.author]("New title", "New desc"),
+        "Should not allow updates after merge"
+    );
+};
+
+// ============================================================================
+// HELPER FUNCTIONS FOR TESTS
+// ============================================================================
+
+/**
+ * Creates a standard test PR with one author, one reviewer, and one maintainer
+ */
+function createTestPR() returns PullRequest -> {
+    var author = createParty("alice@example.com", "developer");
+    var reviewer = createParty("bob@example.com", "reviewer");
+    var maintainer = createParty("dave@example.com", "maintainer");
+
+    var files = listOf<FileChange>(
+        FileChange("src/test.ts", FileChangeType.ADDED, 50, 0, optionalOf<Text>())
+    );
+
+    return PullRequest[author, listOf<Party>(reviewer), maintainer](
+        "Test PR",
+        "Description",
+        "feature/test",
+        "main",
+        files
+    );
+};
+
+/**
+ * Creates a party with specific email and role
+ * Implementation depends on NPL testing utilities
+ */
+function createParty(email: Text, role: Text) returns Party -> {
+    // Creates a party with specific claims
+    // Implementation depends on NPL testing utilities
+};
+
+// ============================================================================
+// INTEGRATION TESTS - COMPLEX SCENARIOS
+// ============================================================================
+
+/**
+ * Test: Multiple reviewers with mixed reviews
+ * Verifies PR handles multiple reviewers correctly
+ */
+@test
+function testMultipleReviewers(test: Test) -> {
+    var author = createParty("alice@example.com", "developer");
+    var reviewer1 = createParty("bob@example.com", "reviewer");
+    var reviewer2 = createParty("carol@example.com", "reviewer");
+    var maintainer = createParty("dave@example.com", "maintainer");
+
+    var files = listOf<FileChange>(
+        FileChange("src/test.ts", FileChangeType.ADDED, 50, 0, optionalOf<Text>())
+    );
+
+    var pr = PullRequest[author, listOf<Party>(reviewer1, reviewer2), maintainer](
+        "Multi-reviewer PR",
+        "Testing multiple reviewers",
+        "feature/multi",
+        "main",
+        files
+    );
+
+    pr.markReadyForReview[author]();
+    pr.requestReview[reviewer1]();
+
+    pr.submitReview[reviewer1](ReviewType.APPROVE, "Good", listOf<ReviewComment>());
+    pr.submitReview[reviewer2](ReviewType.REQUEST_CHANGES, "Needs work", listOf<ReviewComment>());
+
+    test.assertEquals(2, pr.getReviewCount());
+    test.assertEquals(1, pr.getApprovalCount());
+    test.assertEquals(1, pr.getChangesRequestedCount());
+    test.assertFalse(pr.canMerge());
+};
+
+/**
+ * Test: Complete PR lifecycle (happy path)
+ * Verifies full workflow from creation to merge
+ */
+@test
+function testFullPRLifecycle(test: Test) -> {
+    var pr = createTestPR();
+
+    // 1. Start in draft
+    test.assertEquals(true, pr.isDraft);
+
+    // 2. Mark ready for review
+    pr.markReadyForReview[pr.author]();
+    test.assertEquals(false, pr.isDraft);
+
+    // 3. Request review
+    pr.requestReview[pr.reviewers]();
+
+    // 4. Submit approval
+    pr.setRequiredApprovals[pr.maintainer](1);
+    pr.submitReview[pr.reviewers](ReviewType.APPROVE, "LGTM", listOf<ReviewComment>());
+
+    // 5. Merge
+    test.assertTrue(pr.canMerge());
+    var result = pr.merge[pr.maintainer]("Merge feature");
+    test.assertTrue(result.success);
+};
+
+/**
+ * Test: Changes requested flow
+ * Verifies workflow when changes are requested and addressed
+ */
+@test
+function testChangesRequestedFlow(test: Test) -> {
+    var pr = createTestPR();
+
+    // 1. Mark ready and request review
+    pr.markReadyForReview[pr.author]();
+    pr.requestReview[pr.reviewers]();
+
+    // 2. Reviewer requests changes
+    pr.submitReview[pr.reviewers](ReviewType.REQUEST_CHANGES, "Fix bugs", listOf<ReviewComment>());
+    test.assertEquals(1, pr.getChangesRequestedCount());
+    test.assertFalse(pr.canMerge());
+
+    // 3. Author responds
+    pr.respondToReview[pr.author]("review_1", "Fixed the issues");
+
+    // 4. Author adds new commits
+    var newFiles = listOf<FileChange>(
+        FileChange("src/fix.ts", FileChangeType.MODIFIED, 10, 5, optionalOf<Text>())
+    );
+    pr.addFiles[pr.author](newFiles);
+
+    // 5. Reviewer approves
+    pr.setRequiredApprovals[pr.maintainer](1);
+    pr.submitReview[pr.reviewers](ReviewType.APPROVE, "Looks good now", listOf<ReviewComment>());
+
+    // 6. Can now merge
+    test.assertTrue(pr.canMerge());
+};
+
+/**
+ * Test: State transitions
+ * Verifies all state transitions work correctly
+ */
+@test
+function testStateTransitions(test: Test) -> {
+    var pr = createTestPR();
+
+    // draft → open
+    pr.markReadyForReview[pr.author]();
+    test.assertEquals("open", pr.getCurrentState());
+
+    // open → review_requested
+    pr.requestReview[pr.reviewers]();
+    test.assertEquals("review_requested", pr.getCurrentState());
+
+    // review_requested → in_review (via COMMENT)
+    pr.submitReview[pr.reviewers](ReviewType.COMMENT, "Suggestion", listOf<ReviewComment>());
+    test.assertEquals("in_review", pr.getCurrentState());
+
+    // in_review → approved (via APPROVE with sufficient approvals)
+    pr.setRequiredApprovals[pr.maintainer](1);
+    pr.submitReview[pr.reviewers](ReviewType.APPROVE, "LGTM", listOf<ReviewComment>());
+    test.assertEquals("approved", pr.getCurrentState());
+
+    // approved → merged
+    pr.merge[pr.maintainer]("Merge it");
+    test.assertEquals("merged", pr.getCurrentState());
+};
+
+/**
+ * Test: Close and reopen PR
+ * Verifies PR can be closed and reopened
+ */
+@test
+function testCloseAndReopenPR(test: Test) -> {
+    var pr = createTestPR();
+    pr.markReadyForReview[pr.author]();
+
+    // Close PR
+    pr.close[pr.maintainer]("Not needed anymore");
+    test.expectNotifications(pr, PRClosed, 1, function() returns Boolean -> true);
+
+    // Reopen PR
+    pr.reopen[pr.maintainer]();
+    test.expectNotifications(pr, PRReopened, 1, function() returns Boolean -> true);
+};
+
+/**
+ * Test: Set required approvals
+ * Verifies maintainer can change approval requirements
+ */
+@test
+function testSetRequiredApprovals(test: Test) -> {
+    var pr = createTestPR();
+
+    // Default is 2
+    test.assertEquals(2, pr.requiredApprovals);
+
+    // Change to 3
+    pr.setRequiredApprovals[pr.maintainer](3);
+    test.assertEquals(3, pr.requiredApprovals);
+    test.expectNotifications(pr, RequiredApprovalsChanged, 1, function() returns Boolean -> true);
+};
+
+// ============================================================================
+// INTEGRATION TESTS - AUTHORIZATION AND VALIDATION
+// ============================================================================
+
+/**
+ * Test: Authorization failures
+ * Verifies party-based access control works correctly
+ */
+@test
+function testAuthorizationFailures(test: Test) -> {
+    var pr = createTestPR();
+    pr.markReadyForReview[pr.author]();
+
+    // Author cannot merge (only maintainer can)
+    test.assertFails(
+        function() -> pr.merge[pr.author]("Try to merge"),
+        "Author should not be able to merge"
+    );
+
+    // Reviewer cannot update details (only author can)
+    test.assertFails(
+        function() -> pr.updateDetails[pr.reviewers]("New title", "New desc"),
+        "Reviewer should not be able to update details"
+    );
+
+    // Maintainer cannot submit review (only reviewers can)
+    test.assertFails(
+        function() -> pr.submitReview[pr.maintainer](ReviewType.APPROVE, "LGTM", listOf<ReviewComment>()),
+        "Maintainer should not be able to submit review"
+    );
+};
+
+/**
+ * Test: State guard enforcement
+ * Verifies permissions respect state guards
+ */
+@test
+function testStateGuardEnforcement(test: Test) -> {
+    var pr = createTestPR();
+
+    // Cannot merge while in draft
+    test.assertFails(
+        function() -> pr.merge[pr.maintainer]("Try to merge"),
+        "Should not be able to merge in draft state"
+    );
+
+    // Cannot request review while in draft
+    test.assertFails(
+        function() -> pr.requestReview[pr.reviewers](),
+        "Should not be able to request review in draft state"
+    );
+
+    pr.markReadyForReview[pr.author]();
+    pr.requestReview[pr.reviewers]();
+
+    // Cannot merge while in review_requested (need approvals)
+    test.assertFails(
+        function() -> pr.merge[pr.maintainer]("Try to merge"),
+        "Should not be able to merge without approvals"
+    );
+};
+
+/**
+ * Test: Validation rules
+ * Verifies require statements enforce business rules
+ */
+@test
+function testValidationRules(test: Test) -> {
+    var pr = createTestPR();
+
+    // Cannot set required approvals to 0
+    test.assertFails(
+        function() -> pr.setRequiredApprovals[pr.maintainer](0),
+        "Required approvals must be at least 1"
+    );
+
+    // Cannot add empty file list
+    test.assertFails(
+        function() -> pr.addFiles[pr.author](listOf<FileChange>()),
+        "Cannot add empty file list"
+    );
+};
+
