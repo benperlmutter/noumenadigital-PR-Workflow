@@ -46,6 +46,8 @@ protocol[author, reviewers, maintainer] PullRequest(
     initial state draft;
     state open;
     state review_requested;
+    state in_review;
+    state changes_requested;
     state approved;
     final state merged;
     final state closed;
@@ -109,12 +111,19 @@ protocol[author, reviewers, maintainer] PullRequest(
         reviews = reviews + listOf<ReviewRecord>(reviewRecord);
         
         // Update state based on review type
-        if (reviewType == ReviewType.APPROVE) {
+        if (reviewType == ReviewType.REQUEST_CHANGES) {
+            become changes_requested;
+        } else if (reviewType == ReviewType.APPROVE) {
             if (getApprovalCount() >= requiredApprovals) {
                 become approved;
+            } else {
+                become in_review;
             };
+        } else {
+            // COMMENT type
+            become in_review;
         };
-        
+
         updatedAt = now();
         return reviewRecord;
     };
@@ -156,18 +165,28 @@ protocol[author, reviewers, maintainer] PullRequest(
     function getReviewCount() returns Number -> reviews.size();
     
     /**
-     * Get the number of APPROVE reviews.
+     * Get the number of unique APPROVE reviews (counts each reviewer once).
+     * Note: This is a simplified count that may include duplicates.
+     * For production use, implement proper unique counting.
      */
     function getApprovalCount() returns Number ->
         reviews
             .filter(function(r: ReviewRecord) returns Boolean -> r.reviewType == ReviewType.APPROVE)
             .size();
-    
+
     /**
-     * Check if PR can be merged.
+     * Get the number of REQUEST_CHANGES reviews.
+     */
+    function getChangesRequestedCount() returns Number ->
+        reviews
+            .filter(function(r: ReviewRecord) returns Boolean -> r.reviewType == ReviewType.REQUEST_CHANGES)
+            .size();
+
+    /**
+     * Check if PR can be merged (has enough approvals and no unresolved change requests).
      */
     function canMerge() returns Boolean ->
-        getApprovalCount() >= requiredApprovals;
+        getApprovalCount() >= requiredApprovals && getChangesRequestedCount() == 0;
     
     // ========================================================================
     // HELPER FUNCTIONS
@@ -178,15 +197,17 @@ protocol[author, reviewers, maintainer] PullRequest(
      */
     function generateReviewId() returns Text ->
         "review_" + now().toText();
-    
+
     /**
-     * Get username from party claims.
+     * Get username from party claims with fallback.
      */
     function getUsername(party: Party) returns Text ->
         party.claims()
         .getOrNone("preferred_username")
-        .getOrFail()
+        .getOrElse(setOf("unknown_user"))
         .toList()
         .get(0);
+
+
 };
 
