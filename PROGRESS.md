@@ -33,8 +33,8 @@ Implementing a GitHub-style Pull Request Workflow system in NPL (Noumena Protoco
   - [x] Implement helper functions (getApprovalCount, getChangesRequestedCount, canMerge, etc.)
 
 ### Phase 4: Supporting Components
-- [ ] Create `pullrequest/Notifications.npl`
-  - [ ] Define notification events for PR lifecycle
+- [x] Create `pullrequest/Notifications.npl`
+  - [x] Define notification events for PR lifecycle
 - [ ] Create `pullrequest/Helpers.npl`
   - [ ] Implement utility functions (getUsername, generateId, etc.)
 
@@ -123,6 +123,32 @@ Implementing a GitHub-style Pull Request Workflow system in NPL (Noumena Protoco
 
 **Next Steps:**
 - ✅ Implement PullRequest protocol (PullRequest.npl)
+
+### ✅ Milestone 3: PullRequest Protocol Implementation (December 1, 2025)
+**Status:** Complete
+**PR:** #4 (Merged)
+
+**What was done:**
+- Created `pullrequest/PullRequest.npl` with complete PullRequest protocol
+- Implemented 8-state state machine (draft → open → review_requested → in_review → changes_requested → approved → merged/closed)
+- Added 5 author permissions, 3 reviewer permissions, 4 maintainer permissions
+- Added 6 query functions for PR status and metrics
+- Included 4 private helper functions
+- Integrated Review protocol creation
+- Added comprehensive validation and business logic
+- Implemented notification emission for all major events
+- Addressed review comments: renamed reopen(), fixed MergeResult construction
+
+**Technical Details:**
+- 435 lines including documentation
+- Three parties (author, reviewers, maintainer)
+- Complex state transitions based on review types
+- Configurable approval requirements (default: 2)
+- Protocol instantiation: Review[reviewers](...)
+- List operations: filter, map, sum, concat
+
+**Next Steps:**
+- ✅ Implement Notifications.npl
 
 ---
 
@@ -215,6 +241,8 @@ Implementing a GitHub-style Pull Request Workflow system in NPL (Noumena Protoco
 - **16:15** - Created and merged PR #2 for data structures
 - **16:30** - Implemented Review.npl protocol (102 lines)
 - **16:30** - Created and merged PR #3 for Review protocol
-- **16:45** - Implemented PullRequest.npl protocol (433 lines)
-- **16:45** - Preparing PR for PullRequest protocol implementation
+- **16:45** - Implemented PullRequest.npl protocol (435 lines)
+- **16:45** - Created and merged PR #4 for PullRequest protocol (addressed review comments)
+- **17:00** - Implemented Notifications.npl with all event definitions (177 lines)
+- **17:00** - Preparing PR for Notifications implementation
 
