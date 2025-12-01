@@ -171,10 +171,11 @@ notification FilesAdded(fileCount: Number, prTitle: Text) returns Unit;
 
 /**
  * Emitted when the maintainer changes the required approval count.
- * 
+ *
  * Parameters:
  * - prTitle: PR title
  * - newCount: New required approval count
  */
 notification RequiredApprovalsChanged(prTitle: Text, newCount: Number) returns Unit;
+
 
