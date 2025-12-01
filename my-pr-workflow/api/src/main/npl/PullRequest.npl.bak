@@ -1,0 +1,191 @@
+package pullrequest;
+
+/**
+ * PullRequest Protocol - Simplified Cloud-Compatible Version
+ * 
+ * Represents a GitHub-style pull request with core lifecycle management.
+ * This version is optimized for NOUMENA Cloud deployment.
+ * 
+ * Parties:
+ * - author: Creator and owner of the PR
+ * - reviewers: Team members who can review the PR
+ * - maintainer: Repository maintainer who can merge
+ * 
+ * States:
+ * - draft (initial): PR is being prepared
+ * - open: PR is ready for review
+ * - review_requested: Reviews have been requested
+ * - approved: PR has required approvals
+ * - merged (final): PR has been merged
+ * - closed (final): PR was closed without merging
+ */
+@api
+protocol[author, reviewers, maintainer] PullRequestSimplified(
+    var title: Text,
+    var description: Text,
+    var sourceBranch: Text,
+    var targetBranch: Text
+) {
+    // Validation
+    require(title != "", "Title cannot be empty");
+    require(sourceBranch != "", "Source branch cannot be empty");
+    require(targetBranch != "", "Target branch cannot be empty");
+    require(sourceBranch != targetBranch, "Source and target branches must be different");
+    
+    // Core data fields
+    var reviews: List<ReviewRecord> = listOf<ReviewRecord>();
+    var requiredApprovals: Number = 2;
+    var isDraft: Boolean = true;
+    
+    // Timestamps
+    var createdAt: DateTime = now();
+    var updatedAt: DateTime = now();
+    
+    // State machine
+    initial state draft;
+    state open;
+    state review_requested;
+    state approved;
+    final state merged;
+    final state closed;
+    
+    // ========================================================================
+    // PERMISSIONS
+    // ========================================================================
+    
+    /**
+     * Update PR title and description.
+     */
+    @api
+    permission[author] updateDetails(
+        newTitle: Text,
+        newDescription: Text
+    ) | draft, open, review_requested {
+        require(newTitle != "", "Title cannot be empty");
+        title = newTitle;
+        description = newDescription;
+        updatedAt = now();
+    };
+    
+    /**
+     * Mark PR as ready for review (exit draft mode).
+     */
+    @api
+    permission[author] markReadyForReview() | draft {
+        isDraft = false;
+        become open;
+        updatedAt = now();
+    };
+    
+    /**
+     * Request reviews from the reviewers.
+     */
+    @api
+    permission[author] requestReview() | open {
+        become review_requested;
+        updatedAt = now();
+    };
+    
+    /**
+     * Submit a code review.
+     */
+    @api
+    permission[reviewers] submitReview(
+        reviewType: ReviewType,
+        summary: Text
+    ) returns ReviewRecord | review_requested {
+        require(summary != "", "Review summary cannot be empty");
+        
+        // Create review record
+        var reviewRecord = ReviewRecord(
+            reviewId = generateReviewId(),
+            reviewer = getUsername(reviewers),
+            reviewType = reviewType,
+            summary = summary,
+            comments = listOf<ReviewComment>(),
+            submittedAt = now()
+        );
+        reviews = reviews + listOf<ReviewRecord>(reviewRecord);
+        
+        // Update state based on review type
+        if (reviewType == ReviewType.APPROVE) {
+            if (getApprovalCount() >= requiredApprovals) {
+                become approved;
+            };
+        };
+        
+        updatedAt = now();
+        return reviewRecord;
+    };
+    
+    /**
+     * Merge the PR.
+     */
+    @api
+    permission[maintainer] merge() | approved {
+        become merged;
+        updatedAt = now();
+    };
+    
+    /**
+     * Close the PR without merging (author).
+     */
+    @api
+    permission[author] closeByAuthor() | draft, open, review_requested, approved {
+        become closed;
+        updatedAt = now();
+    };
+
+    /**
+     * Close the PR without merging (maintainer).
+     */
+    @api
+    permission[maintainer] closeByMaintainer() | draft, open, review_requested, approved {
+        become closed;
+        updatedAt = now();
+    };
+    
+    // ========================================================================
+    // QUERY FUNCTIONS
+    // ========================================================================
+    
+    /**
+     * Get the total number of reviews.
+     */
+    function getReviewCount() returns Number -> reviews.size();
+    
+    /**
+     * Get the number of APPROVE reviews.
+     */
+    function getApprovalCount() returns Number ->
+        reviews
+            .filter(function(r: ReviewRecord) returns Boolean -> r.reviewType == ReviewType.APPROVE)
+            .size();
+    
+    /**
+     * Check if PR can be merged.
+     */
+    function canMerge() returns Boolean ->
+        getApprovalCount() >= requiredApprovals;
+    
+    // ========================================================================
+    // HELPER FUNCTIONS
+    // ========================================================================
+    
+    /**
+     * Generate a unique review ID.
+     */
+    function generateReviewId() returns Text ->
+        "review_" + now().toText();
+    
+    /**
+     * Get username from party claims.
+     */
+    function getUsername(party: Party) returns Text ->
+        party.claims()
+        .getOrNone("preferred_username")
+        .getOrFail()
+        .toList()
+        .get(0);
+};
+

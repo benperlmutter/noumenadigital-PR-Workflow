@@ -1,0 +1,161 @@
+package pullrequest;
+
+// ============================================================================
+// ENUMS
+// ============================================================================
+
+/**
+ * ReviewType defines the possible types of code reviews.
+ * - APPROVE: Reviewer approves the changes
+ * - REQUEST_CHANGES: Reviewer requests changes before approval
+ * - COMMENT: Reviewer provides feedback without explicit approval/rejection
+ */
+enum ReviewType {
+    APPROVE,
+    REQUEST_CHANGES,
+    COMMENT
+};
+
+/**
+ * FileChangeType defines the types of changes that can be made to files.
+ * - ADDED: New file added
+ * - MODIFIED: Existing file modified
+ * - DELETED: File removed
+ * - RENAMED: File renamed/moved
+ */
+enum FileChangeType {
+    ADDED,
+    MODIFIED,
+    DELETED,
+    RENAMED
+};
+
+/**
+ * MergeStrategy defines how a PR should be merged into the target branch.
+ * - MERGE_COMMIT: Creates a merge commit preserving all commits
+ * - SQUASH: Squashes all commits into a single commit
+ * - REBASE: Rebases commits onto target branch
+ */
+enum MergeStrategy {
+    MERGE_COMMIT,
+    SQUASH,
+    REBASE
+};
+
+// ============================================================================
+// CORE STRUCTS
+// ============================================================================
+
+/**
+ * FileChange represents a change to a single file in the pull request.
+ */
+struct FileChange {
+    filePath: Text,
+    changeType: FileChangeType,
+    linesAdded: Number,
+    linesDeleted: Number,
+    oldPath: Optional<Text>  // For renames - contains the original path
+};
+
+/**
+ * ReviewComment represents a single comment on a specific line of code.
+ */
+struct ReviewComment {
+    filePath: Text,
+    lineNumber: Number,
+    commentText: Text,
+    createdAt: DateTime,
+    commentId: Text
+};
+
+/**
+ * PRSummary provides a high-level overview of a pull request's status.
+ */
+struct PRSummary {
+    title: Text,
+    currentState: Text,  // String representation of current state
+    reviewCount: Number,
+    approvalCount: Number,
+    changesRequestedCount: Number,
+    canMerge: Boolean,
+    createdAt: DateTime,
+    updatedAt: DateTime
+};
+
+/**
+ * ReviewSummary provides a summary of a single review.
+ */
+struct ReviewSummary {
+    reviewId: Text,
+    reviewType: ReviewType,
+    summary: Text,
+    commentCount: Number,
+    submittedAt: DateTime
+};
+
+/**
+ * ReviewRecord stores complete review data within a PullRequest.
+ * This replaces the separate Review protocol to avoid protocol composition issues.
+ * Contains all review information including reviewer identity, type, comments, and metadata.
+ */
+struct ReviewRecord {
+    reviewId: Text,
+    reviewer: Text,
+    reviewType: ReviewType,
+    summary: Text,
+    comments: List<ReviewComment>,
+    submittedAt: DateTime
+};
+
+/**
+ * MergeResult contains the outcome of a merge operation.
+ */
+struct MergeResult {
+    success: Boolean,
+    commitSha: Text,
+    message: Text
+};
+
+/**
+ * PRMetrics tracks various metrics about the pull request lifecycle.
+ */
+struct PRMetrics {
+    timeToFirstReview: Optional<Number>,  // milliseconds
+    timeToMerge: Optional<Number>,        // milliseconds
+    totalReviews: Number,
+    totalComments: Number,
+    filesChangedCount: Number,
+    totalLinesChanged: Number
+};
+
+// ============================================================================
+// HELPER STRUCTS
+// ============================================================================
+
+/**
+ * Contributor represents a user who contributes to the repository.
+ */
+struct Contributor {
+    username: Text,
+    email: Text,
+    role: Text
+};
+
+/**
+ * Branch represents a git branch with metadata.
+ */
+struct Branch {
+    name: Text,
+    lastCommitSha: Text,
+    lastUpdated: DateTime
+};
+
+/**
+ * MergeConflict represents a conflict that prevents automatic merging.
+ */
+struct MergeConflict {
+    filePath: Text,
+    conflictType: Text,
+    description: Text
+};
+
