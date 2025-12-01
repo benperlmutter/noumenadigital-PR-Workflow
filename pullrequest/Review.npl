@@ -1,0 +1,98 @@
+package pullrequest;
+
+/**
+ * Review Protocol
+ * 
+ * Represents a code review submitted by a reviewer on a pull request.
+ * Reviews are immutable once submitted and contain the reviewer's assessment,
+ * comments, and overall decision (approve, request changes, or comment only).
+ * 
+ * Parties:
+ * - reviewer: The person conducting the review
+ * 
+ * States:
+ * - submitted (initial): Review has been submitted
+ * - acknowledged (final): Review has been seen by the author
+ * 
+ * Key Features:
+ * - Immutable review records
+ * - Support for line-by-line comments
+ * - Three review types: APPROVE, REQUEST_CHANGES, COMMENT
+ * - Automatic timestamp and ID generation
+ */
+@api
+protocol[reviewer] Review(
+    var reviewType: ReviewType,
+    var summary: Text,
+    var comments: List<ReviewComment>
+) {
+    // Validation: Review must have a non-empty summary
+    require(!summary.isEmpty(), "Review summary cannot be empty");
+    
+    // Automatically set when review is created
+    var submittedAt: DateTime = now();
+    var reviewId: Text = generateReviewId();
+    
+    // State machine: Simple two-state lifecycle
+    initial state submitted;
+    final state acknowledged;
+    
+    // ========================================================================
+    // PERMISSIONS
+    // ========================================================================
+    
+    /**
+     * Acknowledge the review (marks it as seen by the author).
+     * Can only be called when the review is in the submitted state.
+     */
+    @api
+    permission[reviewer] acknowledge() | submitted {
+        become acknowledged;
+    };
+    
+    // ========================================================================
+    // QUERY FUNCTIONS
+    // ========================================================================
+    
+    /**
+     * Get the number of comments in this review.
+     * 
+     * Returns:
+     *   Number of comments
+     */
+    @api
+    function getCommentCount() returns Number -> comments.size();
+    
+    /**
+     * Get a summary of this review including key metadata.
+     * 
+     * Returns:
+     *   ReviewSummary struct with review details
+     */
+    @api
+    function getReviewSummary() returns ReviewSummary -> {
+        return ReviewSummary(
+            reviewId = reviewId,
+            reviewType = reviewType,
+            summary = summary,
+            commentCount = comments.size(),
+            submittedAt = submittedAt
+        );
+    };
+    
+    // ========================================================================
+    // PRIVATE HELPER FUNCTIONS
+    // ========================================================================
+    
+    /**
+     * Generate a unique review ID based on the current timestamp.
+     * Format: "review_<milliseconds>"
+     * 
+     * Returns:
+     *   Unique review ID as Text
+     */
+    private function generateReviewId() returns Text -> {
+        return "review_" + now().toMillis().toText();
+    };
+};
+
