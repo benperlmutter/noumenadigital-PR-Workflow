@@ -1,0 +1,8 @@
+# Augment indexing configuration
+# This file controls what Augment indexes for context retrieval
+
+# By default, respect .gitignore patterns
+# But explicitly unignore the noumena-digital-docs folder for Augment indexing
+!noumena-digital-docs/
+!noumena-digital-docs/**
+

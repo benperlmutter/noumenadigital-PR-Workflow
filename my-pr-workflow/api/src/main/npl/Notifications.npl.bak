@@ -1,0 +1,181 @@
+package pullrequest;
+
+/**
+ * Notification System for Pull Request Workflow
+ * 
+ * This file defines all notification events that are emitted during the PR lifecycle.
+ * External systems can subscribe to these notifications via the NPL Runtime's
+ * notification stream (ws://localhost:12000/notifications).
+ * 
+ * Notification Categories:
+ * - PR Lifecycle Events: State transitions and major PR actions
+ * - Review Events: Review requests, submissions, and responses
+ * - File Events: File additions and modifications
+ * - Configuration Events: Settings changes
+ * 
+ * Integration Examples:
+ * - Slack notifications for PR status changes
+ * - Email alerts for review requests
+ * - Webhook triggers for CI/CD pipelines
+ * - Dashboard updates for team metrics
+ */
+
+// ============================================================================
+// PR LIFECYCLE EVENTS
+// ============================================================================
+
+/**
+ * Emitted when a PR transitions from draft to open state.
+ * Indicates the PR is ready for review.
+ * 
+ * Parameters:
+ * - title: PR title
+ * - author: Username of the PR author
+ */
+notification PRReadyForReview(title: Text, author: Text) returns Unit;
+
+/**
+ * Emitted when a PR is converted back to draft status.
+ * Indicates the PR is no longer ready for review.
+ * 
+ * Parameters:
+ * - title: PR title
+ */
+notification PRConvertedToDraft(title: Text) returns Unit;
+
+/**
+ * Emitted when PR title or description is updated.
+ * 
+ * Parameters:
+ * - title: Updated PR title
+ * - author: Username of the person who made the update
+ */
+notification PRUpdated(title: Text, author: Text) returns Unit;
+
+/**
+ * Emitted when a PR is successfully merged into the target branch.
+ * This is a terminal event - no further actions can be taken on the PR.
+ * 
+ * Parameters:
+ * - title: PR title
+ * - sourceBranch: Branch being merged from
+ * - targetBranch: Branch being merged into
+ * - commitSha: SHA of the merge commit
+ * - mergedBy: Username of the maintainer who performed the merge
+ */
+notification PRMerged(
+    title: Text,
+    sourceBranch: Text,
+    targetBranch: Text,
+    commitSha: Text,
+    mergedBy: Text
+) returns Unit;
+
+/**
+ * Emitted when a PR is closed without merging.
+ * 
+ * Parameters:
+ * - title: PR title
+ * - reason: Explanation for closing the PR
+ * - closedBy: Username of the maintainer who closed the PR
+ */
+notification PRClosed(title: Text, reason: Text, closedBy: Text) returns Unit;
+
+/**
+ * Emitted when a previously closed PR is reopened.
+ * 
+ * Parameters:
+ * - title: PR title
+ * - reopenedBy: Username of the maintainer who reopened the PR
+ */
+notification PRReopened(title: Text, reopenedBy: Text) returns Unit;
+
+// ============================================================================
+// REVIEW EVENTS
+// ============================================================================
+
+/**
+ * Emitted when a reviewer formally requests a review.
+ * Transitions the PR from open to review_requested state.
+ * 
+ * Parameters:
+ * - prTitle: PR title
+ * - requestedBy: Username of the reviewer requesting the review
+ */
+notification ReviewRequested(prTitle: Text, requestedBy: Text) returns Unit;
+
+/**
+ * Emitted when a reviewer submits a complete review.
+ * Includes the review type (APPROVE, REQUEST_CHANGES, or COMMENT).
+ * 
+ * Parameters:
+ * - prTitle: PR title
+ * - reviewer: Username of the reviewer
+ * - reviewType: Type of review (APPROVE, REQUEST_CHANGES, COMMENT)
+ * - commentCount: Number of comments in the review
+ */
+notification ReviewSubmitted(
+    prTitle: Text,
+    reviewer: Text,
+    reviewType: ReviewType,
+    commentCount: Number
+) returns Unit;
+
+/**
+ * Emitted when a reviewer adds a single comment to a specific line.
+ * This is for lightweight comments, not full reviews.
+ * 
+ * Parameters:
+ * - prTitle: PR title
+ * - commenter: Username of the person adding the comment
+ * - filePath: Path to the file being commented on
+ * - lineNumber: Line number of the comment
+ */
+notification CommentAdded(
+    prTitle: Text,
+    commenter: Text,
+    filePath: Text,
+    lineNumber: Number
+) returns Unit;
+
+/**
+ * Emitted when the PR author responds to a review.
+ * 
+ * Parameters:
+ * - prTitle: PR title
+ * - author: Username of the PR author
+ * - reviewId: ID of the review being responded to
+ */
+notification AuthorResponded(
+    prTitle: Text,
+    author: Text,
+    reviewId: Text
+) returns Unit;
+
+// ============================================================================
+// FILE EVENTS
+// ============================================================================
+
+/**
+ * Emitted when new files are added to the PR.
+ * 
+ * Parameters:
+ * - fileCount: Number of files added
+ * - prTitle: PR title
+ */
+notification FilesAdded(fileCount: Number, prTitle: Text) returns Unit;
+
+// ============================================================================
+// CONFIGURATION EVENTS
+// ============================================================================
+
+/**
+ * Emitted when the maintainer changes the required approval count.
+ *
+ * Parameters:
+ * - prTitle: PR title
+ * - newCount: New required approval count
+ */
+notification RequiredApprovalsChanged(prTitle: Text, newCount: Number) returns Unit;
+
+

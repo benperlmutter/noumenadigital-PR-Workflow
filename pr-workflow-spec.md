@@ -2,19 +2,30 @@
 
 ## Executive Summary
 
-This specification defines a comprehensive GitHub-style Pull Request (PR) workflow system implemented in NPL (Noumena Protocol Language). The system demonstrates NPL's authorization model, state machines, and multi-party coordination capabilities while creating a familiar developer workflow that showcases Augment Code's ability to assist developers in learning and building with entirely new programming languages.
+This specification defines a GitHub-style Pull Request (PR) workflow system implemented in NPL (Noumena Protocol Language). The system demonstrates NPL's authorization model, state machines, and multi-party coordination capabilities while creating a familiar developer workflow that showcases Augment Code's ability to assist developers in learning and building with entirely new programming languages.
 
 **Target Audience:** Developers familiar with Git workflows but new to NPL
 **Complexity Level:** Intermediate - showcases NPL's core features without overwhelming complexity
 **Estimated Build Time:** 4-6 hours with AI assistance
-**Key NPL Features Demonstrated:** 
+**Key NPL Features Demonstrated:**
 - Party-based authorization
 - State machine transitions
-- Protocol composition
+- Struct-based data modeling (cloud-compatible)
 - Structs and enums
-- Notifications
 - Permission guards
 - Protocol-level and global functions
+
+## ⚠️ Implementation Notes - Cloud Deployment
+
+**Data Model Simplification (v2.0.0):**
+The implementation has been simplified for NOUMENA Cloud compatibility. The original design used a separate `Review` protocol, but this caused deployment issues due to protocol composition limitations in the cloud platform. The current implementation uses a **struct-based approach** where review data is stored as `ReviewRecord` structs within the `PullRequest` protocol.
+
+**Key Changes:**
+- ✅ **Removed:** Separate `Review.npl` protocol
+- ✅ **Added:** `ReviewRecord` struct in `Types.npl`
+- ✅ **Simplified:** PullRequest protocol with reduced complexity
+- ✅ **Cloud Compatible:** Successfully deploys to NOUMENA Cloud
+- ✅ **Functional:** Core PR workflow features maintained
 
 ---
 
@@ -102,13 +113,14 @@ Represents a proposed code change with full lifecycle management.
 - `isApproved: Boolean` - Whether PR has sufficient approvals
 - `canMerge: Boolean` - Whether PR is ready to merge
 
-#### Review (Nested Protocol)
-Represents a reviewer's assessment of the PR.
+#### ReviewRecord (Struct) - **Updated in v2.0.0**
+Represents a reviewer's assessment of the PR stored as a struct within the PullRequest protocol.
 
-**Parties:**
-- `reviewer` - Person conducting the review
+**Note:** Originally designed as a separate `Review` protocol, but simplified to a struct for cloud deployment compatibility.
 
-**Core Data:**
+**Fields:**
+- `reviewId: Text` - Unique identifier for the review
+- `reviewer: Text` - Username of the person conducting the review
 - `reviewType: ReviewType` - APPROVE, REQUEST_CHANGES, COMMENT
 - `summary: Text` - Overall review feedback
 - `comments: List<ReviewComment>` - Line-by-line comments
@@ -124,7 +136,7 @@ Individual feedback on specific code sections.
 - `createdAt: DateTime` - When comment was made
 - `commentId: Text` - Unique identifier
 
-### 2.2 Entity Relationships
+### 2.2 Entity Relationships - **Updated in v2.0.0**
 
 ```
 Repository (1) ──┬──> (N) PullRequest
@@ -134,47 +146,54 @@ Repository (1) ──┬──> (N) PullRequest
 PullRequest (1) ──> (1) author
                 ├──> (N) reviewers
                 ├──> (1) maintainer
-                └──> (N) Review
+                └──> (N) ReviewRecord (stored as List<ReviewRecord>)
 
-Review (1) ──> (N) ReviewComment
+ReviewRecord (struct) ──> (N) ReviewComment
 ```
+
+**Note:** ReviewRecord is now a struct stored within PullRequest, not a separate protocol.
 
 ---
 
 ## 3. Protocol Architecture
 
-### 3.1 Package Structure
+### 3.1 Package Structure - **Updated in v2.0.0**
 
 ```
 pullrequest/
-├── PullRequest.npl       # Main PR protocol
-├── Review.npl            # Review sub-protocol
-├── Types.npl             # Enums and structs
-├── Notifications.npl     # Event notifications
-└── Helpers.npl           # Utility functions
+├── PullRequest.npl       # Main PR protocol (simplified for cloud)
+├── Types.npl             # Enums and structs (includes ReviewRecord)
+└── demo/
+    └── helloWorld.npl    # Example protocol
 ```
 
-### 3.2 Protocol Hierarchy
+**Removed in v2.0.0:**
+- ~~Review.npl~~ - Replaced with ReviewRecord struct
+- ~~Notifications.npl~~ - Simplified for initial deployment
+- ~~Helpers.npl~~ - Functions moved into protocols
+
+### 3.2 Protocol Hierarchy - **Updated in v2.0.0**
 
 **Primary Protocol: PullRequest**
 - Manages the entire PR lifecycle
-- Coordinates reviews
+- Stores reviews as ReviewRecord structs
 - Enforces merge rules
-- Emits notifications
+- Simplified for cloud deployment
 
-**Secondary Protocol: Review**
-- Created by PullRequest
-- Scoped to individual reviewer
-- Immutable once submitted
+**Data Structures:**
+- ReviewRecord (struct) - Stores review data
+- ReviewComment (struct) - Individual code comments
+- Various enums for types and states
 
-### 3.3 Design Principles
+### 3.3 Design Principles - **Updated in v2.0.0**
 
-1. **Single Responsibility:** Each protocol has one clear purpose
-2. **Immutability:** Reviews cannot be edited once submitted (mimics GitHub)
+1. **Cloud Compatibility:** Simplified data model for NOUMENA Cloud deployment
+2. **Struct-Based Storage:** Reviews stored as structs instead of protocol instances
 3. **Authorization First:** Every action checks party membership
 4. **State Guards:** Permissions are restricted by current state
 5. **Audit Trail:** NPL's built-in versioning tracks all changes
 6. **Explicit Transitions:** State changes are deliberate and documented
+7. **Pragmatic Simplification:** Reduced complexity while maintaining core functionality
 
 ---
 

@@ -1,0 +1,8 @@
+$schema: https://documentation.noumenadigital.com/schemas/migration-schema-v2.yml
+
+changesets:
+  - name: 2.0.1
+    changes:
+      - migrate:
+          sources:
+            - npl

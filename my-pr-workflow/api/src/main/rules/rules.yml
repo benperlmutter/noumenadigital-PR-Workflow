@@ -1,0 +1,19 @@
+demo.HelloWorld:
+  greeter:
+    extract:
+      claims:
+        - preferred_username
+
+pullrequest.PullRequest:
+  author:
+    extract:
+      claims:
+        - preferred_username
+  reviewers:
+    extract:
+      claims:
+        - preferred_username
+  maintainer:
+    extract:
+      claims:
+        - preferred_username
